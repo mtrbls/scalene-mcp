@@ -1,26 +1,33 @@
 # scalene-mcp
 
-MCP integration for [Scalene](https://getscalene.com) — the AI coding assistant scorecard.
-
-Connects Claude Code to your Scalene dashboard. One command to install, one sentence to sync.
+Claude Code plugin for [Scalene](https://getscalene.com) — the AI coding scorecard.
 
 ## Install
 
 ```bash
-claude mcp add --transport http --scope user scalene https://getscalene.com/u/<your-token>/mcp
+claude plugin install https://github.com/mtrbls/scalene-mcp
 ```
 
-Your personal token is on your [dashboard](https://getscalene.com/me) — click **Connect Claude Code**.
+Then set your credentials (from your [dashboard](https://getscalene.com/me) → Connect):
 
-## Sync your history
-
-In any Claude Code session:
-
-```
-"sync my Claude Code history to Scalene"
+```bash
+export SCALENE_API_URL=https://getscalene.com/u/<your-token>
+export SCALENE_TOKEN=<your-bearer-token>
 ```
 
-The agent saves a Python script to `/tmp/scalene_sync.py` and runs it. Your dashboard updates within seconds.
+That's it. Every session auto-syncs when it ends.
+
+## How it works
+
+The plugin registers a `SessionEnd` hook that fires once when you close a Claude Code session. It runs a Python script locally that reads the session's JSONL file and POSTs metadata to your Scalene dashboard.
+
+## Import historical data (optional)
+
+Want your past sessions too?
+
+```bash
+curl -sL https://raw.githubusercontent.com/mtrbls/scalene-mcp/main/sync_script.py | python3 - --api-url 'https://getscalene.com/u/<your-token>' --token '<your-bearer-token>'
+```
 
 ## What gets exported
 
@@ -32,32 +39,15 @@ The sync script runs **entirely on your machine**. Only metadata crosses the net
 | Token counts (input/output/cache) | Response text |
 | Model ID (e.g. `claude-opus-4-6`) | File contents |
 | Tool name (e.g. `Edit`, `Bash`) | Tool inputs or outputs |
-| Git branch, project path | Thinking blocks |
-| Git user.email (for attribution) | Any conversation content |
-
-## Ongoing sync
-
-After the initial import, add a Stop hook so every session auto-syncs when it ends:
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "command": "python3 /tmp/scalene_sync.py --api-url https://getscalene.com --token YOUR_TOKEN --session-only $CLAUDE_SESSION_ID"
-      }
-    ]
-  }
-}
-```
-
-Save this to `~/.claude/hooks.json` (or your project's `.claude/hooks.json`).
+| Stop reason, content block types | Thinking blocks |
+| Git branch, project path | Any conversation content |
 
 ## Privacy
 
-The privacy whitelist is enforced on **your machine**, not the server. The script is ~250 lines of stdlib Python with zero dependencies. Audit it yourself:
+The privacy whitelist is enforced on **your machine**, not the server. The script is ~300 lines of stdlib Python with zero dependencies. Audit it:
 
-- [sync_script.py](./sync_script.py)
+- [sync_script.py](./sync_script.py) (standalone)
+- [plugin/bin/scalene-sync.py](./plugin/bin/scalene-sync.py) (bundled in plugin)
 
 ## Links
 
