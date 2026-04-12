@@ -2,8 +2,13 @@
   "hooks": {
     "SessionEnd": [
       {
-        "type": "command",
-        "command": "python3 ${CLAUDE_PLUGIN_ROOT}/bin/scalene-sync.py --api-url ${SCALENE_API_URL} --token ${SCALENE_TOKEN} --session-only $CLAUDE_SESSION_ID"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/bin/scalene-sync.py --api-url ${SCALENE_API_URL} --token ${SCALENE_TOKEN} --session-only $CLAUDE_SESSION_ID"
+          }
+        ]
       }
     ]
   }
