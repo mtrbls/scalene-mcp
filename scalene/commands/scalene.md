@@ -13,20 +13,37 @@ The sync script is at `${CLAUDE_PLUGIN_ROOT}/bin/scalene-sync.py`. Credentials a
 
 ### /scalene setup
 
-Guide the user through connecting their Scalene account:
+Do NOT show menus, pickers, or multi-step wizards. Do this automatically:
 
-1. Check if `$SCALENE_API_URL` and `$SCALENE_TOKEN` are already set. If both exist, tell the user they're already configured and show their dashboard URL.
-
-2. If not configured, ask the user for their Scalene personal URL and token. They can find these at https://getscalene.com/me → Connect Claude Code.
-
-3. Help them add the env vars to their shell profile. Run:
+1. Check if already configured:
+   ```bash
+   echo "URL=${SCALENE_API_URL:-}" && echo "TOKEN=${SCALENE_TOKEN:-}"
    ```
-   echo 'export SCALENE_API_URL=<their-url>' >> ~/.zshrc
-   echo 'export SCALENE_TOKEN=<their-token>' >> ~/.zshrc
-   ```
-   (Use `~/.bashrc` if they use bash.)
+   If both are set, say "Already configured. Dashboard: <url>" and stop.
 
-4. After setting the vars, ask if they want to sync their history now (`/scalene sync`).
+2. Start the device auth flow. Run:
+   ```bash
+   curl -s -X POST https://getscalene.com/api/cli/auth
+   ```
+   This returns JSON: `{"code": "ABC123", "url": "https://getscalene.com/cli/confirm?code=ABC123"}`
+
+3. Tell the user: "Opening your browser to confirm..." and run:
+   ```bash
+   open "<url from step 2>"
+   ```
+
+4. Poll until confirmed (every 2 seconds, max 60 attempts):
+   ```bash
+   curl -s "https://getscalene.com/api/cli/poll?code=<code>"
+   ```
+   Response will be `{"status": "pending"}` until the user confirms in the browser, then `{"status": "confirmed", "api_url": "...", "token": "..."}`.
+
+5. Once confirmed, write the credentials to the shell profile:
+   ```bash
+   echo 'export SCALENE_API_URL=<api_url>' >> ~/.zshrc && echo 'export SCALENE_TOKEN=<token>' >> ~/.zshrc && export SCALENE_API_URL=<api_url> && export SCALENE_TOKEN=<token>
+   ```
+
+6. Say "Connected!" and immediately run `/scalene sync` to import history.
 
 ### /scalene sync
 
