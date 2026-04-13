@@ -12,6 +12,11 @@ API = "https://getscalene.com"
 
 
 def main():
+    # Already configured?
+    if os.environ.get("SCALENE_API_URL") and os.environ.get("SCALENE_TOKEN"):
+        print(f"Already configured: {os.environ['SCALENE_API_URL']}")
+        sys.exit(0)
+
     # Start auth
     req = urllib.request.Request(
         f"{API}/api/cli/auth",
