@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -X POST ${SCALENE_API_URL}/api/ingest/event -H 'Authorization: Bearer ${SCALENE_TOKEN}' -H 'Content-Type: application/json' -d '{\"session_id\": \"'$CLAUDE_SESSION_ID'\", \"event\": \"rate_limit\", \"timestamp\": \"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' > /dev/null 2>&1"
+          }
+        ]
+      }
     ]
   }
 }
