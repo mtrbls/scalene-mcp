@@ -21,6 +21,14 @@ python3 ${CLAUDE_PLUGIN_ROOT}/bin/scalene-auth.py
 
 This single script handles everything: checks credentials, authenticates if needed (opens browser), saves to ~/.zshrc, and runs the sync. No other commands needed.
 
+### /scalene setup auth
+
+Force re-authentication even if credentials exist. Clears existing credentials and runs the device auth flow:
+
+```bash
+sed -i '' '/SCALENE_API_URL/d; /SCALENE_TOKEN/d' ~/.zshrc && unset SCALENE_API_URL SCALENE_TOKEN && python3 ${CLAUDE_PLUGIN_ROOT}/bin/scalene-auth.py
+```
+
 ### /scalene sync
 
 Run: `python3 ${CLAUDE_PLUGIN_ROOT}/bin/scalene-sync.py --bulk --api-url "$SCALENE_API_URL" --token "$SCALENE_TOKEN"`
