@@ -380,15 +380,24 @@ def sync_history_stubs(api_url: str, token: str, history_path: Path, root: Path)
 
 
 def sync_bulk(api_url: str, token: str, root: Path):
-    """Collect everything locally, write to /tmp, upload in one request."""
-    identity = _get_identity()
-    ingest_url = f"{api_url.rstrip('/')}/api/ingest/bulk"
+    """Collect last 3 months locally, then upload in chunked requests."""
+    import math
+    import time
+    from datetime import datetime as _dt, timedelta as _td
 
-    print("Scalene Bulk Sync")
+    identity = _get_identity()
+    ingest_url = f"{api_url.rstrip('/')}/api/ingest/sessions"
+    cutoff = (_dt.utcnow() - _td(days=90)).isoformat() + "Z"
+
+    print("Scalene Bulk Sync (last 3 months)")
     print(f"  api:  {api_url}")
     print(f"  root: {root}")
+    print(f"  cutoff: {cutoff[:10]}")
+    if identity:
+        print(f"  user: {identity.get('email', '?')}")
     print()
 
+    # Phase 1: collect everything locally.
     all_files = list(_find_session_files(root))
     print(f"Found {len(all_files)} JSONL files")
 
@@ -398,9 +407,19 @@ def sync_bulk(api_url: str, token: str, root: Path):
     seen_turns: set[str] = set()
 
     for i, jsonl_path in enumerate(all_files):
+        # Skip files older than cutoff by checking file mtime first.
+        try:
+            if jsonl_path.stat().st_mtime < (_dt.utcnow() - _td(days=90)).timestamp():
+                continue
+        except OSError:
+            continue
+
         for line in _iter_jsonl(jsonl_path):
             sm = _extract_session(line)
             if sm and sm["id"] not in seen_sessions:
+                # Skip sessions before cutoff.
+                if sm.get("started_at", "") < cutoff:
+                    continue
                 seen_sessions.add(sm["id"])
                 sm["project_path_encoded"] = sm["cwd"].replace("/", "-")
                 sm["jsonl_path"] = str(jsonl_path)
@@ -411,6 +430,9 @@ def sync_bulk(api_url: str, token: str, root: Path):
 
             tm = _extract_turn(line)
             if tm and tm["uuid"] not in seen_turns:
+                # Skip turns before cutoff.
+                if tm.get("timestamp", "") < cutoff:
+                    continue
                 seen_turns.add(tm["uuid"])
                 all_turns.append(tm)
 
@@ -418,26 +440,56 @@ def sync_bulk(api_url: str, token: str, root: Path):
             print(f"  scanned {i + 1}/{len(all_files)} files...")
 
     print(f"Collected {len(all_sessions)} sessions, {len(all_turns)} turns")
+    print()
 
-    # Write to temp file
-    import tempfile
-    payload: dict = {"sessions": all_sessions, "turns": all_turns}
-    if identity:
-        payload["agent_identity"] = identity
+    # Phase 2: upload in chunks of 5000 turns each.
+    CHUNK = 5000
+    total_chunks = max(1, math.ceil(len(all_turns) / CHUNK))
+    sessions_total = 0
+    turns_total = 0
+    errors = 0
+    sent_session_ids: set[str] = set()
 
-    tmp = Path(tempfile.mktemp(suffix=".json", prefix="scalene_bulk_"))
-    with tmp.open("w") as f:
-        json.dump(payload, f)
-    size_mb = tmp.stat().st_size / 1024 / 1024
-    print(f"Wrote {size_mb:.1f}MB to {tmp}")
+    for i in range(0, len(all_turns), CHUNK):
+        chunk_idx = i // CHUNK + 1
+        chunk_turns = all_turns[i : i + CHUNK]
+        print(f"Uploading chunk {chunk_idx}/{total_chunks} ({len(chunk_turns)} turns)...")
 
-    # Upload
-    print("Uploading...")
-    with tmp.open("rb") as f:
-        data = f.read()
-    result = _post(ingest_url, token, json.loads(data), retries=1)
-    print(f"Result: {result}")
-    tmp.unlink(missing_ok=True)
+        # Include sessions referenced by these turns.
+        chunk_session_ids = {t["session_id"] for t in chunk_turns}
+        chunk_sessions = [s for s in all_sessions if s["id"] in chunk_session_ids]
+        sent_session_ids.update(s["id"] for s in chunk_sessions)
+
+        payload: dict = {"sessions": chunk_sessions, "turns": chunk_turns}
+        if identity:
+            payload["agent_identity"] = identity
+
+        result = _post(ingest_url, token, payload)
+        s = result.get("sessions_upserted", 0)
+        t = result.get("turns_upserted", 0)
+        sessions_total += s
+        turns_total += t
+        if not result:
+            errors += 1
+        else:
+            print(f"  → {s} sessions, {t} turns upserted")
+        time.sleep(0.1)
+
+    # Phase 3: send remaining sessions that had no turns.
+    orphan_sessions = [s for s in all_sessions if s["id"] not in sent_session_ids]
+    if orphan_sessions:
+        print(f"Uploading {len(orphan_sessions)} sessions with no turns...")
+        payload = {"sessions": orphan_sessions, "turns": []}
+        if identity:
+            payload["agent_identity"] = identity
+        result = _post(ingest_url, token, payload)
+        sessions_total += result.get("sessions_upserted", 0)
+
+    print()
+    print(f"Done. {sessions_total} sessions, {turns_total} turns in {total_chunks} chunks.")
+    if errors:
+        print(f"  {errors} chunks had errors.")
+    return sessions_total, turns_total
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────
